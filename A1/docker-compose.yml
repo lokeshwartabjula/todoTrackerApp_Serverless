@@ -1,0 +1,30 @@
+services:
+  container_1:
+    container_name: container_1
+    image: 97292462/cloud-a1-container1:validator_tag
+    # build:
+    #   context: ./image_1
+    #   dockerfile: Dockerfile
+    ports:
+      - 6000:6000
+    networks:
+      - loki-network
+    volumes:
+      - .:/volume_dir/
+
+  container_2:
+    container_name: container_2
+    image: 97292462/cloud-a1-container2:calculator_tag
+    # build:
+    #   context: ./image_2
+    #   dockerfile: Dockerfile
+    ports:
+      - 8080:8080
+    networks:
+      - loki-network
+    volumes:
+      - .:/volume_dir/
+
+networks:
+  loki-network:
+    driver: bridge
