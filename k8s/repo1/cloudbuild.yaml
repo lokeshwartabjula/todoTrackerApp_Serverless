@@ -1,0 +1,18 @@
+steps:
+  # Docker Build
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'us-central1-docker.pkg.dev/k8s-b00936909/k8s-artreg-b00936909/image1', './']
+
+  # Docker Push another small change
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-central1-docker.pkg.dev/k8s-b00936909/k8s-artreg-b00936909/image1']
+
+  - name: "gcr.io/cloud-builders/gke-deploy"
+    args:
+      - run
+      - --filename=./manifests/
+      - --image=us-central1-docker.pkg.dev/k8s-b00936909/k8s-artreg-b00936909/image1
+      - --location=us-central1-c
+      - --cluster=k8s-cluster-b00936909
+ 
+  
