@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  MyDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TableName: todo_list_users
+
+  MyDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TableName: todo_list_items
+
+
+  MySNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: MySNSTopic
+      TopicName: ToDoListNotification
+
+  MyLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: sendEmailFunction
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: arn:aws:iam::173603524603:role/LabRole
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          import time
+
+          def lambda_handler(event, context):
+              print("Initializing SNS and DynamoDB clients...")
+              sns = boto3.client('sns')
+              dynamodb = boto3.client('dynamodb')
+
+              # Get the ARN of the SNS topic from the environment variable
+              print("Getting SNS topic ARN from environment variable...")
+              topic_arn = 'arn:aws:sns:us-east-1:173603524603:ToDoListNotification'
+
+              for record in event['Records']:
+                  print(f"Processing record: {record}")
+                  if record['eventName'] == 'MODIFY':
+                      # Extract userEmail from the DynamoDB event
+                      print("record of event name is ", record['eventName'])
+                      print("record is ", record)
+                      print("Event is a MODIFY event. Extracting userEmail...")
+                      new_image = record['dynamodb']['NewImage']
+                      userEmail = new_image['friendEmail']['S']
+                      print(f"Extracted userEmail: {userEmail}")
+
+                      # Get all existing subscriptions for the SNS topic
+                      print("Getting all existing subscriptions for the SNS topic...")
+                      subscriptions = sns.list_subscriptions_by_topic(TopicArn=topic_arn)['Subscriptions']
+                      print(f"Existing subscriptions: {subscriptions}")
+
+                      # Check if a subscription already exists for the userEmail
+                      print("Checking if a subscription already exists for the userEmail...")
+                      existing_subscription = None
+                      for subscription in subscriptions:
+                          if subscription['Endpoint'] == userEmail:
+                              existing_subscription = subscription
+                              print(f"Found existing subscription for userEmail: {existing_subscription}")
+                              break
+
+                      if not existing_subscription:
+                          print("No existing subscription found. Creating a new subscription...")
+                          # Create a new subscription for the userEmail
+                          subscription_arn = sns.subscribe(
+                              TopicArn=topic_arn,
+                              Protocol='email',
+                              Endpoint=userEmail,
+                              ReturnSubscriptionArn=True,
+                              Attributes={'FilterPolicy': json.dumps({'userEmail': [userEmail]})}
+                          )['SubscriptionArn']
+                          print(f"Created new subscription with ARN: {subscription_arn}")
+
+                          # Wait until the subscription status becomes "confirmed"
+                          print("Waiting until the subscription status becomes 'confirmed'...")
+                          while True:
+                              response = sns.get_subscription_attributes(SubscriptionArn=subscription_arn)
+                              if response['Attributes']['SubscriptionArn']:
+                                  print("Subscription confirmed.")
+                                  break
+                              print("Subscription not yet confirmed. Waiting for 5 seconds...")
+                              time.sleep(5)
+
+                      # Trigger SNS topic with the userEmail as a message attribute
+                      print("Triggering SNS topic with the userEmail as a message attribute...")
+                      message = f"Hello!!! {userEmail}, you have a new task assigned to you!!"
+                      subject = "New Task Assigned"  # Subject for the email
+                      sns.publish(
+                          TopicArn=topic_arn,
+                          Message=message,
+                          Subject=subject,
+                          MessageAttributes={
+                              'userEmail': {
+                                  'DataType': 'String',
+                                  'StringValue': userEmail
+                              }
+                          }
+                      )
+                      print("Message published successfully.")
+
+              print("Returning response from Lambda function...")
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Hello from Lambda!')
+              }
+
+      Timeout: 30  # Change this if you expect the Lambda function to run longer
+      Environment:
+        Variables:
+          MySNSTopicArn: !Ref MySNSTopic  # Set the SNS topic ARN as an environment variable
+
+  MyLambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      EventSourceArn: !GetAtt MyDynamoDBTable.StreamArn
+      FunctionName: !GetAtt MyLambdaFunction.Arn
+      StartingPosition: LATEST
+
+Outputs:
+  MySNSTopicARN:
+    Description: The ARN of the SNS topic
+    Value: !Ref MySNSTopic
+  MyLambdaFunctionARN:
+    Description: The ARN of the Lambda function
+    Value: !GetAtt MyLambdaFunction.Arn
+  MyDynamoDBTableStreamARN:
+    Description: The ARN of the DynamoDB table stream
+    Value: !GetAtt MyDynamoDBTable.StreamArn

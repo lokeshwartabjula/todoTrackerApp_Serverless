@@ -1,0 +1,754 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create API Gateway and Lambda functions for the todo list application
+
+Resources:
+
+#Lambda functions
+  LambdaTodoApiSignUp:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "TodoApiSignUp"
+      Runtime: "python3.8"
+      Handler: "index.lambda_handler"
+      Role: "arn:aws:iam::173603524603:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+
+          dynamodb = boto3.resource('dynamodb')
+          table_name = 'todo_list_users'
+          table = dynamodb.Table(table_name)
+
+          def lambda_handler(event, context):
+              # Get the request payload
+              request_payload = event
+
+              # Generate a unique ID for the user
+              user_id = int(uuid.uuid4().time_low)
+
+              # Add the generated ID to the request payload
+              request_payload['id'] = user_id
+
+              # Store the data in DynamoDB table
+              table.put_item(Item=request_payload)
+
+              # Prepare the response body as a JSON object
+              response_body = {
+                  'id': user_id,
+                  'email': request_payload['email'],
+                  'password': request_payload['password'],
+                  'resetToken': None
+              }
+
+              # Create the API response
+              response = {
+                  'statusCode': 200,
+                  'body': response_body,  # Pass the dictionary directly as JSON object
+              }
+
+              return response_body
+
+  LambdaTodoApiLogin:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "TodoApiLogin"
+      Runtime: "python3.8"
+      Handler: "index.lambda_handler"
+      Role: "arn:aws:iam::173603524603:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+
+          dynamodb = boto3.resource('dynamodb')
+          table_name = 'todo_list_users'
+          table = dynamodb.Table(table_name)
+
+          def lambda_handler(event, context):
+              # Get the request payload
+              request_payload = event
+
+              # Get the email and password from the request payload
+              email = request_payload.get('email')
+              password = request_payload.get('password')
+
+              # Check if email and password are provided
+              if not email or not password:
+                  response = {
+                      'statusCode': 400,
+                      'body': json.dumps({'message': 'Please provide both email and password.'}),
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'  # You can adjust CORS settings as needed
+                      }
+                  }
+                  return response
+
+              # Query the DynamoDB table for the user with the given email
+              response = table.scan(FilterExpression=boto3.dynamodb.conditions.Attr('email').eq(email))
+              items = response.get('Items', [])
+
+              # Check if the user exists
+              if not items:
+                  response = {
+                      'statusCode': 404,
+                      'body': json.dumps({'message': 'User not found. Please check your credentials.'}),
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'  # You can adjust CORS settings as needed
+                      }
+                  }
+                  return response
+
+              # Get the first user (assuming email is unique)
+              user = items[0]
+
+              # Check if the password matches
+              if user.get('password') != password:
+                  response = {
+                      'statusCode': 401,
+                      'body': json.dumps({'message': 'Incorrect password. Please check your credentials.'}),
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'  # You can adjust CORS settings as needed
+                      }
+                  }
+                  return response
+
+              # Prepare the response
+              response_body = {
+                  'id': user['id'],
+                  'email': user['email'],
+                  'password': user['password'],
+                  'resetToken': user.get('resetToken', None)
+              }
+
+              return response_body
+
+  LambdaTodoApiCreate:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "TodoApiCreate"
+      Runtime: "python3.8"
+      Handler: "index.lambda_handler"
+      Role: "arn:aws:iam::173603524603:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+
+          dynamodb = boto3.resource('dynamodb')
+          table_name = 'todo_list_items'
+          table = dynamodb.Table(table_name)
+
+          def lambda_handler(event, context):
+              # Get the request payload
+              request_payload = event
+            
+              # Generate a unique ID for the user
+              todo_id = int(uuid.uuid4().time_low)
+
+              # Add the generated ID to the request payload
+              request_payload['id'] = todo_id
+
+
+              # Store the data in the DynamoDB table
+              table.put_item(Item=request_payload)
+
+              # Prepare the response
+              response_body = "todo created successfully."
+
+
+              return response_body
+
+  LambdaTodoApiUpdate:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "TodoApiUpdate"
+      Runtime: "python3.8"
+      Handler: "index.lambda_handler"
+      Role: "arn:aws:iam::173603524603:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+
+          dynamodb = boto3.resource('dynamodb')
+          table_name = 'todo_list_items'
+          table = dynamodb.Table(table_name)
+
+          def lambda_handler(event, context):
+              # Get the request payload
+              request_payload = event
+
+              # Get the todo item ID from the request payload
+              todo_id = request_payload.get('id')
+
+              # Remove the 'id' from the payload since we don't want to update it
+              del request_payload['id']
+
+              # Create the UpdateExpression to update the specified attributes
+              update_expression = 'SET '
+              expression_attribute_values = {}
+              expression_attribute_names = {}
+
+              for key, value in request_payload.items():
+                  # Use alias for the "user" attribute
+                  attribute_name = f'#{key}'
+                  update_expression += f'{attribute_name} = :{key}, '
+                  expression_attribute_names[attribute_name] = key
+                  expression_attribute_values[f':{key}'] = value
+
+              update_expression = update_expression.rstrip(', ')
+
+              # Update the data in the DynamoDB table
+              table.update_item(
+                  Key={'id': todo_id},
+                  UpdateExpression=update_expression,
+                  ExpressionAttributeNames=expression_attribute_names,
+                  ExpressionAttributeValues=expression_attribute_values
+              )
+
+
+              # Prepare the response
+              response_body = "Todo updated successfully."
+
+
+              return response_body
+
+  LambdaTodoApiDelete:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "TodoApiDelete"
+      Runtime: "python3.8"
+      Handler: "index.lambda_handler"
+      Role: "arn:aws:iam::173603524603:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+
+          dynamodb = boto3.resource('dynamodb')
+          table_name = 'todo_list_items'
+          table = dynamodb.Table(table_name)
+
+          def lambda_handler(event, context):
+              # Get the request payload
+              request_payload = event
+
+              # Get the todo item ID from the request payload
+              todo_id = request_payload.get('id')
+
+              # Delete the item from the DynamoDB table
+              table.delete_item(Key={'id': todo_id})
+
+              # Prepare the response
+              response_body = "Todo deleted successfully."
+
+              return response_body
+
+  LambdaTodoApiGetList:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "TodoApiGetList"
+      Runtime: "python3.8"
+      Handler: "index.lambda_handler"
+      Role: "arn:aws:iam::173603524603:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+
+          dynamodb = boto3.resource('dynamodb')
+          table_name = 'todo_list_items'
+          table = dynamodb.Table(table_name)
+
+          def lambda_handler(event, context):
+              # Get the request payload
+              request_payload = event
+
+              # Get the user email from the request payload
+              user_email = request_payload.get('email')
+
+              # Query the DynamoDB table for all records for the specified user
+              response = table.scan(FilterExpression=boto3.dynamodb.conditions.Attr('user').eq(user_email))
+              items = response.get('Items', [])
+
+              # Prepare the response
+              response_body = items
+
+              return response_body
+
+  LambdaTodoApiGetDetails:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "TodoApiGetDetails"
+      Runtime: "python3.8"
+      Handler: "index.lambda_handler"
+      Role: "arn:aws:iam::173603524603:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+
+          dynamodb = boto3.resource('dynamodb')
+          table_name = 'todo_list_items'
+          table = dynamodb.Table(table_name)
+
+          def lambda_handler(event, context):
+              # Get the request payload
+              request_payload = event
+
+              # Get the todo item ID from the request payload
+              todo_id = int(request_payload.get('id'))
+
+              # Query the DynamoDB table for the specific todo item with the given ID
+              response = table.get_item(Key={'id': todo_id})
+              item = response.get('Item', {})
+
+              # Prepare the response
+              response_body = item
+
+              return response_body
+
+  LambdaTodoApiAssignFriend:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "TodoApiAssignFriend"
+      Runtime: "python3.8"
+      Handler: "index.lambda_handler"
+      Role: "arn:aws:iam::173603524603:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+
+          dynamodb = boto3.resource('dynamodb')
+          table_name = 'todo_list_items'
+          table = dynamodb.Table(table_name)
+
+          def lambda_handler(event, context):
+              # Get the request payload
+              request_payload = event
+
+              # Get the todo item ID and friend email from the request payload
+              todo_id = request_payload.get('todoId')
+              friend_email = request_payload.get('friendEmail')
+
+              # Update the data in the DynamoDB table to assign the todo item to the friend
+              table.update_item(
+                  Key={'id': todo_id},
+                  UpdateExpression='SET friendEmail = :friendEmail',
+                  ExpressionAttributeValues={
+                      ':friendEmail': friend_email,
+                  }
+              )
+
+              # Prepare the response
+              response_body = "Todo assigned successfully."
+
+              return response_body
+
+ 
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: TodListApi
+
+#Lambda Permissions
+  LambdaTodoApiSignUpPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LambdaTodoApiSignUp.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  LambdaTodoApiLoginPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LambdaTodoApiLogin.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  LambdaTodoApiCreatePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LambdaTodoApiCreate.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  LambdaTodoApiUpdatePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LambdaTodoApiUpdate.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  LambdaTodoApiDeletePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LambdaTodoApiDelete.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  LambdaTodoApiGetListPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LambdaTodoApiGetList.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  LambdaTodoApiGetDetailsPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LambdaTodoApiGetDetails.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  LambdaTodoApiAssignFriendPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt LambdaTodoApiAssignFriend.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+
+#ApiGateway Resource properties
+  TodoApiSignUpResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "TodoApiSignUp"
+
+  TodoApiLoginResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "TodoApiLogin"
+
+  TodoApiCreateResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "todoCreate"
+
+  TodoApiUpdateResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "todoUpdate"
+
+  TodoApiDeleteResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "todoDelete"
+
+  TodoApiGetListResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "todoHome"
+
+  TodoApiGetDetailsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "todoDetails"
+
+  TodoApiAssignFriendResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "todoAssign"
+
+
+# ApiGateway Method
+  TodoApiSignUpMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TodoApiSignUpResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaTodoApiSignUp.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  TodoApiLoginMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TodoApiLoginResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaTodoApiLogin.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  TodoApiCreateMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TodoApiCreateResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaTodoApiCreate.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  TodoApiUpdateMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TodoApiUpdateResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaTodoApiUpdate.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  TodoApiDeleteMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TodoApiDeleteResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaTodoApiDelete.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  TodoApiGetListMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TodoApiGetListResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaTodoApiGetList.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  TodoApiGetDetailsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TodoApiGetDetailsResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaTodoApiGetDetails.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  TodoApiAssignFriendMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref TodoApiAssignFriendResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaTodoApiAssignFriend.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+#API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - TodoApiSignUpMethod
+      - TodoApiLoginMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+
+#API Gateway Stage
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment
+      StageName: prod
+      Description: Production Stage
+
+# Outputs for the project
+Outputs:
+  TodoApiSignUpEndpoint:
+    Description: Endpoint for TodoApiSignUp API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/TodoApiSignUp"
+  TodoApiLoginEndpoint:
+    Description: Endpoint for TodoApiLogin API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/TodoApiLogin"
+  TodoApiCreateEndpoint:
+    Description: Endpoint for TodoApiCreate API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/todoCreate" 
+  TodoApiUpdateEndpoint:
+    Description: Endpoint for TodoApiUpdate API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/todoUpdate"
+  TodoApiDeleteEndpoint:
+    Description: Endpoint for TodoApiDelete API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/todoDelete"
+  TodoApiGetListEndpoint:
+    Description: Endpoint for TodoApiGetList API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/todoHome"
+  TodoApiGetDetailsEndpoint:
+    Description: Endpoint for TodoApiGetDetails API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/todoDetails"
+  TodoApiAssignFriendEndpoint:
+    Description: Endpoint for TodoApiAssignFriend API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/todoAssign"

@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS CloudFormation Sample Template EC2InstanceWithSecurityGroup: Create an Amazon EC2 instance running the Amazon Linux AMI. The instance is running in a security group that allows SSH, HTTP, and HTTPS access. **WARNING** This template creates an Amazon EC2 instance. You will be billed for the AWS resources used if you create a stack from this template.'
+
+Resources:
+
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH, HTTP and HTTPS access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0
+
+  EC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0f34c5ae932e6f0e4  # Replace with your desired AMI
+      KeyName: lokiskeypair             # Replace with your key pair
+      IamInstanceProfile: LabInstanceProfile #name of instance profile, not ARN!!!
+      SecurityGroups:
+        - !Ref InstanceSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          sudo yum update -y
+          sudo yum install -y git
+          curl -sL https://rpm.nodesource.com/setup_14.x | bash -
+          sudo yum install -y nodejs
+          git clone https://github.com/lokeshwartabjula/todoListApp.git   # Replace with your repo
+          cd todoListApp   # Replace with your repo name
+          npm install
+          npm start

@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: CloudFormation template for creating a Cognito User Pool and User Pool Client for the todo list application
+
+Resources:
+  MyUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: todoListUserPool
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      VerificationMessageTemplate:
+        EmailMessageByLink: "Hi {username}!!, Welcome to my todo list management application. \n\nPlease click the following link to verify your email address: {##Verify Email##} If you did not request this verification, please ignore this email. \n\nBest regards, Loki's todo list Team"
+        EmailSubjectByLink: "Your verification link"
+        DefaultEmailOption: "CONFIRM_WITH_LINK"
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      EmailConfiguration:
+        EmailSendingAccount: "COGNITO_DEFAULT"
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Priority: 1
+            Name: "verified_email"
+
+  MyUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: todoListUserPoolClient
+      UserPoolId: !Ref MyUserPool
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+      PreventUserExistenceErrors: "ENABLED"
+      EnableTokenRevocation: true
+      EnablePropagateAdditionalUserContextData: false
+      AuthSessionValidity: 3
+      ReadAttributes:
+        - address
+        - birthdate
+        - email
+        - email_verified
+        - family_name
+        - gender
+        - given_name
+        - locale
+        - middle_name
+        - name
+        - nickname
+        - phone_number
+        - phone_number_verified
+        - picture
+        - preferred_username
+        - profile
+        - updated_at
+        - website
+        - zoneinfo
+      WriteAttributes:
+        - address
+        - birthdate
+        - email
+        - family_name
+        - gender
+        - given_name
+        - locale
+        - middle_name
+        - name
+        - nickname
+        - phone_number
+        - picture
+        - preferred_username
+        - profile
+        - updated_at
+        - website
+        - zoneinfo
+
+  MyUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: todolistuserpooldomain
+      UserPoolId: !Ref MyUserPool
+
+Outputs:
+  UserPoolId:
+    Value: !Ref MyUserPool
+  UserPoolClientId:
+    Value: !Ref MyUserPoolClient
+  UserPoolDomain:
+    Value: !Ref MyUserPoolDomain
