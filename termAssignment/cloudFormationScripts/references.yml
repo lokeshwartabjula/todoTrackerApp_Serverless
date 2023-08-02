@@ -1,0 +1,13 @@
+CloudFormation Documentation References:
+https://docs.aws.amazon.com/cloudformation/
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/Welcome.html
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-instance.html
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-instanceprofile.html
+https://github.com/awsdocs/aws-cloudformation-user-guide/tree/main/doc_source/sample-templates
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html
+https://d1.awsstatic.com/whitepapers/AWS_CloudFormation_Best_Practices.pdf
+https://awscli.amazonaws.com/v2/documentation/api/latest/reference/cloudformation/index.html
+
+
